@@ -3,37 +3,33 @@ from matplotlib import pyplot as plt
 import matplotlib.animation as animation
 import time
 
+# Constants
+
 ε_0 = 8.854187817620389e-12
 μ_0 = 4*np.pi*1e-7
 
 ### untouched, medium base is fine
 class Medium:
-    """docstring for Medium"""
+    """ Medium object that can be used to calculate impedence and equivalent permitivity/permeability of a material """
     def __init__(self, ε_r, μ_r, σ):
         self._ε_r = ε_r
         self._μ_r = μ_r
         self._σ = σ
 
     def ε_eq(self, wave):
-        """
-        dielectric constant [F/m]
-        """
+        """ Dielectric constant [F/m] """
         return ε_0 * self._ε_r * (1 + self._σ/(1j*wave._ω*ε_0 * self._ε_r)) 
 
     def μ_eq(self):
-        """
-        magnetic constant [H/m]
-        """
+        """ Magnetic constant [H/m] """
         return μ_0 * self._μ_r
 
     def ζ_eq(self, wave):
-        """
-        characteristic impedance [Ω]
-        epsilon_eq:   
-        """
+        """ Characteristic impedance [Ω] """
         return (self.μ_eq()/self.ε_eq(wave))**0.5
 
     def type(self, wave):
+        """ Type of the medium (conductor, dielectric, insulator)"""
         U = self._σ / (wave._ω * self._ε_r)
         _type = 'Good conductor' if (U >= 1e2)              else \
                 'Dielectric'     if (U < 1e2 and U >= 1e-2) else \
@@ -41,15 +37,15 @@ class Medium:
         return (U, _type)
     
     def __repr__(self):
+        """ Function for representation of this object """
         return f"<ε_r={self._ε_r}, μ_r={self._μ_r}, σ={self._σ}>"
 
 
-### convert mediums and related objects to be list based
 class Wave:
-    """docstring for Wave object"""
+    """ Wave object, all properties necessary for calculating propagation are contained, only needs mediums, frequency, amplitude, and a wave function """
 
-    # pending
     def __init__(self, mediums=None, f=1.8e9, A=10):
+        """ Initializes wave """
         self._f = f             # [Hz]
         self._ω = 2*np.pi*f     # [rad/s]
         self._A = A             # [V/m]
@@ -73,8 +69,8 @@ class Wave:
             raise RuntimeError("Mediums must be passed as a single medium class member or list containing medium class member(s)")
         self._num_mediums = len(self._mediums)
 
-    # pending
     def add_mediums(self, mediums):
+        """ Adds mediums to medium list """
         if type(mediums) == type(Medium):
             self._mediums.append(mediums)
             self._mediums += 1
@@ -88,12 +84,12 @@ class Wave:
         else:
             raise RuntimeError("Mediums argument must be of the medium class or a list of medium class members")
 
-    # pending
     def get_mediums(self):
+        """ Returns the currently stored mediums """
         return self._mediums
 
-    # pending
     def remove_mediums(self, medium_indices):
+        """ Removes mediums with the given indices """
         if type(medium_indices) == int:
             del self._mediums[medium_indices]
             self._num_mediums -= 1
@@ -108,59 +104,25 @@ class Wave:
             raise RuntimeError("Medium indices must be either an int or list of int")
         
     def k(self, medium):
-        """
-        wavenumber [1/m]
-        """
+        """ Wave number [1/m] """
         return self._ω * np.sqrt(medium.μ_eq() * medium.ε_eq(self))
 
-
-    # def Γ(self, medium1, medium2):
-    #     """
-    #     reflection coefficient
-    #     """
-        
-    #     return (medium2.ζ_eq(self)-medium1.ζ_eq(self))/(medium2.ζ_eq(self)+medium1.ζ_eq(self))
-
-    # pending
     def Γ(self, mediums):
-        """
-        reflection coefficient
-        """
+        """ Reflection coefficient """
         Γc = []
         for i in range(len(mediums)-1):
             Γc.append((mediums[i+1].ζ_eq(self)-mediums[i].ζ_eq(self))/(mediums[i+1].ζ_eq(self)+mediums[i].ζ_eq(self)))
         return Γc
 
-    # def τ(self, medium1, medium2):
-    #     """
-    #     transmission coefficient
-    #     """
-    #     return 2*medium2.ζ_eq(self)/(medium2.ζ_eq(self)+medium1.ζ_eq(self))
-
-    # pending
     def τ(self, mediums):
-        """
-        transmission coefficient
-        """
+        """ Transmission coefficient """
         τc = []
         for i in range(len(mediums)-1):
             τc.append(2*mediums[i+1].ζ_eq(self)/(mediums[i+1].ζ_eq(self)+mediums[i].ζ_eq(self)))
         return τc
 
-    # def δ(self, medium2):
-    #     """
-    #     skin depth
-    #     """
-    #     # return np.sqrt(2/(self._ω*medium2.μ_eq()*medium2._σ))
-        
-    #     α = self.k(medium2).imag
-    #     return -1/α if α != 0 else np.inf
-
-    # pending
     def δ(self, mediums):
-        """
-        skin depth
-        """
+        """ Skin depth """
         δc = []
         for i in range(len(mediums)-1):
             α = self.k(mediums[i+1]).imag
@@ -168,22 +130,19 @@ class Wave:
         return δc
 
     def v(self, medium):
-        """
-        signal velocity [m/s]
-        """
+        """ Velocity [m/s] """
         return (1/np.sqrt(medium.ε_eq(self) * medium.μ_eq())).real
 
     def λ(self, medium):
-        """
-        wavelength [m]
-        """
+        """ Wavelength [m] """
         return self.v(medium)/self._f
 
     def power_density_inc(self, medium):
+        """ Incoming density """
         return 0.5 * 1/abs(medium.ζ_eq(self)) * abs(self._A)**2
 
-    # pending
     def power_density_trans(self, mediums):
+        """ Density transfered to from one medium to another """
         pdt = []
         Γc = self.Γ(mediums)
         for i in range(len(mediums)-1):
@@ -191,10 +150,12 @@ class Wave:
         return pdt
 
     def __repr__(self):
+        """ Function for representation of this object """
         return f"Wave: f = {self._f} Hz; A = {self._A}"
 
-    # pending
     def print_data(self):
+        """ Prints the parameters of the wave and all mediums """
+
         for i in range(len(self._mediums)):
             t = self._mediums[i].type(self)
             print(f"U_{i+1} := σ_{i+1}/(ω*ε_0*ε_r_{i+1}) = {t[0]:.4g}  ==> medium {i+1} is a(n) \033[92m{t[1]}\x1b[0m".format(i+1))
@@ -234,8 +195,9 @@ class Wave:
             print(f"S_{i+2} = {pdt[i]:.4g} = {100*pdt[i]/self.power_density_inc(self._mediums[i]):.4g}% S_{i+1}")
         
 
-    # pending
     def show(self, t, E1_i, ylim):
+        """ Propagation of wave through materials, opens animation if done in CLI otherwise plots at t = 0"""
+
         fig, ax = plt.subplots(figsize=(10,8))
         fig.set_dpi(100)
 
@@ -246,9 +208,6 @@ class Wave:
         spacing = 6*λc[0]/n
         L = n*spacing
         z_list = []
-        
-        # for i in range(len(self._mediums)):
-        #     z_list.append(np.linspace(i*spacing - L/2,(i+1)*spacing - L/2,300))
 
         z_list.append(np.linspace(-spacing,0,300))
         z_list.append(np.linspace(0,spacing,300))
@@ -274,7 +233,6 @@ class Wave:
                 ei.append(lambda k,z,t: (τ_list[l-1] * E1_i(k,-z,t)).real)
                 er.append(lambda k,z,t: (Γ_list[l] * τ_list[l] * E1_i(k,z-z.max(),t)).real)
                 et.append(lambda k,z,t: (τ_list[l] * E1_i(k,-z,t)).real)
-                # et.append(lambda k,z,t: τ_list[l] * E1_i(k,-z,t).real/(ei[l](k_list[l],z_list[1][-1], 0)*τ_list[l-1]))
 
         lines1 = []
         lines2 = []
@@ -345,7 +303,6 @@ class Wave:
         plt.show()
         return anim
 
-    # here 
     def save(self, t, E1_i, ylim):
         raise Exception("Unimplemented")
         anim = self.show(t, E1_i, ylim)
@@ -354,52 +311,19 @@ class Wave:
         writer = Writer(fps=15, metadata=dict(artist='fu'), bitrate=1800)
         anim.save('wave{time.time()}.mp4', writer=writer, dpi=200)
 
-# changed
 class Sine(Wave):
-    """docstring for Sine"""
+    """ Initializes wave class with a sine wave """
     def function(self, k, z, t, A=None):
+        """ function for wave.show() """
         if type(A) == type(None):
             return self._A * np.exp(1j*k*z) * np.exp(1j*self._ω*t)
         else:
             return A * np.exp(1j*k*z) * np.exp(1j*self._ω*t)
 
     def show(self, mediums=[Medium(ε_r=1, μ_r=1, σ=0), Medium(ε_r=2, μ_r=1, σ=.81)]):
+        """ wave.show() with the sine function """
         super().show(
             t=np.linspace(0, super().λ(mediums[0])/super().v(mediums[0]), 45),
             E1_i=self.function,
             ylim=[-2*self._A, 2*self._A]
         )
-
-# class Gaussian(Wave):
-#     """docstring for Gaussian"""
-#     def __init__(self, f=1.8e9, A=10, rms=2.20):
-#         super().__init__(f, A)
-#         self._rms = rms
-
-#     def function(self, k, z, t):
-#         return self._A * 1/np.sqrt(2*np.pi*self._rms**2) * np.exp(-((self._ω*t + k.real*z)**2)/(2 * self._rms**2)) * np.exp(-k.imag*z)
-
-#     def show(self, medium1=Medium(ε_r=1, μ_r=1, σ=0), medium2=Medium(ε_r=1.5, μ_r=1, σ=.21)):
-#         peak=self._A/(self._rms*(2*np.pi)**0.5)
-#         super().show(
-#             t=np.linspace(-.8e-9, 1e-9, 160),
-#             E1_i=self.function,
-#             ylim=[-peak,1.2*peak]
-#         )
-
-# class Rect(Wave):
-#     """docstring for Rectangle"""
-#     def __init__(self, f=1.8e9, A=10, width=6.5):
-#         super().__init__(f, A)
-#         self._width = width
-
-#     def function(self, k, z, t):
-#         return self._A * (np.heaviside(self._ω*t + k.real*z+self._width,1e-6) - np.heaviside(self._ω*t + k.real*z-self._width, 1e-6)) * np.exp(-k.imag*z)
-
-#     def show(self, medium1=Medium(ε_r=1, μ_r=1, σ=0), medium2=Medium(ε_r=2, μ_r=1, σ=.81)):
-#         peak=self._A
-#         super().show(
-#             t=np.linspace(-.8e-9, 3e-9, 160),
-#             E1_i=self.function,
-#             ylim=[-peak,1.2*peak]
-#         )
