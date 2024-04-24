@@ -6,19 +6,6 @@ import time
 ε_0 = 8.854187817620389e-12
 μ_0 = 4*np.pi*1e-7
 
-def incident(E1_i,k,z,t):
-    return (E1_i(k, -z, t)).real
-
-def reflected(Γ,E1_i,k,z,t):
-    return (Γ * E1_i(k, +z, t)).real
-
-def transmitted(τ,E1_i,k,z,t):
-    return (τ * E1_i(k, -z, t)).real
-
-def total(z, t, ei_func, er_func):
-    return ei_func(z, t) + er_func(z, t)
-
-
 ### untouched, medium base is fine
 class Medium:
     """docstring for Medium"""
@@ -90,12 +77,14 @@ class Wave:
     def add_mediums(self, mediums):
         if type(mediums) == type(Medium):
             self._mediums.append(mediums)
+            self._mediums += 1
         elif type(mediums) == list:
             for i in mediums:
                 if type(i) != type(Medium):
                     raise RuntimeError("All members of list must be of the medium class")
                 else:
                     self._mediums.append(i)
+            self._num_mediums += len(mediums)
         else:
             raise RuntimeError("Mediums argument must be of the medium class or a list of medium class members")
 
@@ -107,12 +96,14 @@ class Wave:
     def remove_mediums(self, medium_indices):
         if type(medium_indices) == int:
             del self._mediums[medium_indices]
+            self._num_mediums -= 1
         elif type(medium_indices) == list:
             for i in medium_indices:
                 if type(i) != int:
                     raise RuntimeError("All elements of list must be an int index")
                 else:
                     del self._mediums[i]
+            self._num_mediums -= len(medium_indices)
         else:
             raise RuntimeError("Medium indices must be either an int or list of int")
         
@@ -170,7 +161,6 @@ class Wave:
         """
         skin depth
         """
-        # return np.sqrt(2/(self._ω*medium2.μ_eq()*medium2._σ))
         δc = []
         for i in range(len(mediums)-1):
             α = self.k(mediums[i+1]).imag
@@ -191,9 +181,6 @@ class Wave:
 
     def power_density_inc(self, medium):
         return 0.5 * 1/abs(medium.ζ_eq(self)) * abs(self._A)**2
-
-    # def power_density_trans(self, medium1, medium2):
-    #     return self.power_density_inc(medium1) * (1-(abs(self.Γ(medium1, medium2)))**2)
 
     # pending
     def power_density_trans(self, mediums):
@@ -255,80 +242,62 @@ class Wave:
         λc = []
         for i in range(len(self._mediums)):
             λc.append(self.λ(self._mediums[i]))
-        
-        spacing = 5*min(λc)
-        n = self._num_mediums
-
-        # d_neg = -3*self.λ(self._medium1)
-        # d_pos = -d_neg
+        n = len(self._mediums)
+        spacing = 6*λc[0]/n
         L = n*spacing
-        
-
         z_list = []
         
-        for i in range(len(self._mediums)):
-            z_list.append(np.linspace(i*spacing - L/2,(i+1)*spacing - L/2))
-        # z_medium1 = np.linspace(d_neg, 0, 300)
-        # z_medium2 = np.linspace(0, d_pos, 300)
+        # for i in range(len(self._mediums)):
+        #     z_list.append(np.linspace(i*spacing - L/2,(i+1)*spacing - L/2,300))
 
-        z = sum(z_list)
+        z_list.append(np.linspace(-spacing,0,300))
+        z_list.append(np.linspace(0,spacing,300))
+        z_list.append(np.linspace(spacing,2*spacing,300))
 
         k_list = []
         for i in range(len(self._mediums)):
             k_list.append(self.k(self._mediums[i]))
-        
-        # k_1 = self.k(self._medium1)
-        # k_2 = self.k(self._medium2)
 
         Γ_list = self.Γ(self._mediums)
         τ_list = self.τ(self._mediums)
 
-        # Γ_e = self.Γ(self._medium1, self._medium2)
-        # τ_e = self.τ(self._medium1, self._medium2)
-
         ei = []
         er = []
         et = []
-        etot = []
-
-        for k in range(len(self._mediums)-1):
-            ei.append(lambda z, t, k=k_list[k]: incident(E1_i,k,z,t))
-            er.append(lambda z, t: (Γ_list[k]*E1_i(k_list[k],+z,t)).real)
-            et.append(lambda z, t: (τ_list[k]*E1_i(k_list[k],-z,t)).real)
-            etot.append(lambda z, t: ei[k](z,t) + er[k](z,t))
-
-        # e1_i   = lambda z, t: (      E1_i(k_1, -z, t)).real 
-        # e1_r   = lambda z, t: (Γ_e * E1_i(k_1, +z, t)).real
-        # e2_t   = lambda z, t: (τ_e * E1_i(k_2, -z, t)).real
-        # e1_tot = lambda z, t: e1_i(z,t) + e1_r(z, t)
-
+        
+        for l in range(len(self._mediums)-1):
+            if l == 0:
+                ei.append(lambda z, t, k=k_list[l]: (E1_i(k,-z,t)).real)
+                er.append(lambda z, t, k=k_list[l]: (Γ_list[l] * E1_i(k,z,t)).real)
+                et.append(lambda k,z,t: (τ_list[l] * E1_i(k,-z,t)).real)
+            else:
+                ei.append(lambda k,z,t: (τ_list[l-1] * E1_i(k,-z,t)).real)
+                er.append(lambda k,z,t: (Γ_list[l] * τ_list[l] * E1_i(k,z-z.max(),t)).real)
+                et.append(lambda k,z,t: (τ_list[l] * E1_i(k,-z,t)).real)
+                # et.append(lambda k,z,t: τ_list[l] * E1_i(k,-z,t).real/(ei[l](k_list[l],z_list[1][-1], 0)*τ_list[l-1]))
 
         lines1 = []
         lines2 = []
         lines3 = []
-        lines4 = []
-        tot="$tot$"
+        
+        plot_points = []
+        for i in range(len(self._mediums)):
+            plot_points.append(np.linspace(i*spacing - L/2,(i+1)*spacing - L/2,300))
+
         for i in range(len(self._mediums)-1):
-            line1, = ax.plot(z_list[i],ei[i](z_list[i], t[0]), "--", color='tab:blue', label='incident', linewidth=1)
-            line2, = ax.plot(z_list[i],er[i](z_list[i], t[0]), "-", color='tab:orange', label='reflected', linewidth=1)
-            line3, = ax.plot(z_list[i],etot[i](z_list[i], t[0]), "-", color='tab:green', label='total', linewidth=1.5)
-            line4, = ax.plot(z_list[i],et[i](z_list[i+1], t[0]), "-", color='tab:purple', label='transmitted', linewidth=1.5)
-            # line1, = ax.plot(z_list[i],ei[i](z_list[i], t[0]), "--", linewidth=1)
-            # line2, = ax.plot(z_list[i],er[i](z_list[i], t[0]), "-", linewidth=1)
-            # line3, = ax.plot(z_list[i],etot[i](z_list[i], t[0]), "-", linewidth=1.5)
-            # line4, = ax.plot(z_list[i],et[i](z_list[i+1], t[0]), "-", linewidth=1.5)
+            if i == 0:
+                line1, = ax.plot(plot_points[0],ei[0](z_list[0], t[0]), "--", color='tab:blue', label='incident', linewidth=1)
+                line2, = ax.plot(plot_points[0],er[0](z_list[0], t[0]), "-.", color='tab:orange', label='reflected', linewidth=1)
+                line3, = ax.plot(plot_points[1],et[0](k_list[1],z_list[1], t[0]), "-", color='tab:purple', label='transmitted', linewidth=1.5)
+                
+            else:
+                # line1, = ax.plot(plot_points[i],ei[i](k_list[i], z_list[1], t[0]), "--", color='tab:blue', linewidth=1)
+                line2, = ax.plot(plot_points[i],er[i](k_list[i], z_list[i], t[0]), "-.", color='tab:orange', linewidth=1)
+                line3, = ax.plot(plot_points[i+1],et[i](k_list[i+1],z_list[i+1], t[0]), "-", color='tab:purple', linewidth=1.5)
 
             lines1.append(line1)
             lines2.append(line2)
-            lines3.append(line3)
-            lines4.append(line4)
-
-            
-
-        # line1, = ax.plot(z_medium1, e1_i(z_medium1, t[0]),   "--", color='blue',   label='$e_1^i(z=z_0,t)$',     linewidth=1) 
-        # line2, = ax.plot(z_medium1, e1_r(z_medium1, t[0]),   "-.", color='red',    label='$e_1^r(z=z_0,t)$',     linewidth=1)
-        # line3, = ax.plot(z_medium1, e1_tot(z_medium1, t[0]), "-",  color='green',  label='$e_1^{tot}(z=z_0,t)$', linewidth=1.5) 
-        # line4, = ax.plot(z_medium2, e2_t(z_medium2, t[0]),   "-",  color='purple', label='$e_2^t(z=z_0,t)$',     linewidth=1.5)
+            lines3.append(line3) 
 
         media = []
         for i in range(len(self._mediums)):
@@ -336,7 +305,13 @@ class Wave:
         
         string = "Traveling wave"
         for i in range(len(media)):
-            string = string + "\nmedium {}: z<0, $\epsilon_r$=".format(i+1) + str(media[i][0]) + ", $\mu_r$=" + str(media[i][1]) + ", $\sigma$ =" + str(media[i][2])
+            string = string + "\nmedium {}: $\epsilon_r$=".format(i+1) + str(media[i][0]) + ", $\mu_r$=" + str(media[i][1]) + ", $\sigma$ =" + str(media[i][2])
+
+        for m in range(len(plot_points)-1):
+            if m == 0:
+                ax.axvline(plot_points[m+1][0],color='k',alpha=.5,linestyle='--',label='boundary') 
+            else:
+                ax.axvline(plot_points[m+1][0],color='k',alpha=.5,linestyle='--')
 
         plt.title(string)
         
@@ -348,45 +323,45 @@ class Wave:
         plt.grid(True)
 
         def animate(i):
-            for j in range(len(lines1)):
+
+            for j in range(len(self._mediums)-1):
                 line1 = lines1[j]
                 line2 = lines2[j]
                 line3 = lines3[j]
-                line4 = lines4[j]
-
-                line1.set_data(z_list[j], ei[j](z_list[j], t[i]))
-                line2.set_data(z_list[j], er[j](z_list[j], t[i]))
-                line3.set_data(z_list[j], etot[j](z_list[j], t[i]))
-                line4.set_data(z_list[j+1], et[j](z_list[j], t[i]))
-
+                if j == 0:
+                    line1.set_data(plot_points[0], ei[0](z_list[0], t[i]))
+                    line2.set_data(plot_points[0], er[0](z_list[0], t[i]))
+                    line3.set_data(plot_points[1], et[0](k_list[1], z_list[1], t[i]))
+                else:
+                    # line1.set_data(plot_points[j], ei[j](k_list[j], z_list[1], t[i]))
+                    line2.set_data(plot_points[j], er[j](k_list[j], z_list[j], t[i]))
+                    line3.set_data(plot_points[j+1], et[j](k_list[j+1], z_list[j+1], t[i]))
                 lines1[j] = line1
                 lines2[j] = line2
                 lines3[j] = line3
-                lines4[j] = line4
 
-            # line1.set_data(z_medium1, e1_i(z_medium1, t[i]))
-            # line2.set_data(z_medium1, e1_r(z_medium1, t[i]))
-            # line3.set_data(z_medium1, e1_tot(z_medium1, t[i]))
-            # line4.set_data(z_medium2, e2_t(z_medium2, t[i]))
-            return *lines1, *lines2, *lines3, *lines4,
+            return *lines1, *lines2, *lines3
         anim = animation.FuncAnimation(fig, animate, frames=len(t), interval=40, blit=True)
-        
         plt.show()
+        return anim
 
-    # here ?
+    # here 
     def save(self, t, E1_i, ylim):
         raise Exception("Unimplemented")
-        self.show(t, E1_i, ylim)
+        anim = self.show(t, E1_i, ylim)
         ### Save animation
         Writer = animation.writers['ffmpeg']
         writer = Writer(fps=15, metadata=dict(artist='fu'), bitrate=1800)
-        anim.save(f'media/wave{time.time()}.mp4', writer=writer, dpi=200)
+        anim.save('wave{time.time()}.mp4', writer=writer, dpi=200)
 
-# here
+# changed
 class Sine(Wave):
     """docstring for Sine"""
-    def function(self, k, z, t):
-        return self._A * np.exp(1j*k*z) * np.exp(1j*self._ω*t)
+    def function(self, k, z, t, A=None):
+        if type(A) == type(None):
+            return self._A * np.exp(1j*k*z) * np.exp(1j*self._ω*t)
+        else:
+            return A * np.exp(1j*k*z) * np.exp(1j*self._ω*t)
 
     def show(self, mediums=[Medium(ε_r=1, μ_r=1, σ=0), Medium(ε_r=2, μ_r=1, σ=.81)]):
         super().show(
@@ -394,38 +369,37 @@ class Sine(Wave):
             E1_i=self.function,
             ylim=[-2*self._A, 2*self._A]
         )
-# here
-class Gaussian(Wave):
-    """docstring for Gaussian"""
-    def __init__(self, f=1.8e9, A=10, rms=2.20):
-        super().__init__(f, A)
-        self._rms = rms
 
-    def function(self, k, z, t):
-        return self._A * 1/np.sqrt(2*np.pi*self._rms**2) * np.exp(-((self._ω*t + k.real*z)**2)/(2 * self._rms**2)) * np.exp(-k.imag*z)
+# class Gaussian(Wave):
+#     """docstring for Gaussian"""
+#     def __init__(self, f=1.8e9, A=10, rms=2.20):
+#         super().__init__(f, A)
+#         self._rms = rms
 
-    def show(self, medium1=Medium(ε_r=1, μ_r=1, σ=0), medium2=Medium(ε_r=1.5, μ_r=1, σ=.21)):
-        peak=self._A/(self._rms*(2*np.pi)**0.5)
-        super().show(
-            t=np.linspace(-.8e-9, 1e-9, 160),
-            E1_i=self.function,
-            ylim=[-peak,1.2*peak]
-        )
+#     def function(self, k, z, t):
+#         return self._A * 1/np.sqrt(2*np.pi*self._rms**2) * np.exp(-((self._ω*t + k.real*z)**2)/(2 * self._rms**2)) * np.exp(-k.imag*z)
 
-# here
-class Rect(Wave):
-    """docstring for Rectangle"""
-    def __init__(self, f=1.8e9, A=10, width=6.5):
-        super().__init__(f, A)
-        self._width = width
+#     def show(self, medium1=Medium(ε_r=1, μ_r=1, σ=0), medium2=Medium(ε_r=1.5, μ_r=1, σ=.21)):
+#         peak=self._A/(self._rms*(2*np.pi)**0.5)
+#         super().show(
+#             t=np.linspace(-.8e-9, 1e-9, 160),
+#             E1_i=self.function,
+#             ylim=[-peak,1.2*peak]
+#         )
 
-    def function(self, k, z, t):
-        return self._A * (np.heaviside(self._ω*t + k.real*z+self._width,1e-6) - np.heaviside(self._ω*t + k.real*z-self._width, 1e-6)) * np.exp(-k.imag*z)
+# class Rect(Wave):
+#     """docstring for Rectangle"""
+#     def __init__(self, f=1.8e9, A=10, width=6.5):
+#         super().__init__(f, A)
+#         self._width = width
 
-    def show(self, medium1=Medium(ε_r=1, μ_r=1, σ=0), medium2=Medium(ε_r=2, μ_r=1, σ=.81)):
-        peak=self._A
-        super().show(
-            t=np.linspace(-.8e-9, 3e-9, 160),
-            E1_i=self.function,
-            ylim=[-peak,1.2*peak]
-        )
+#     def function(self, k, z, t):
+#         return self._A * (np.heaviside(self._ω*t + k.real*z+self._width,1e-6) - np.heaviside(self._ω*t + k.real*z-self._width, 1e-6)) * np.exp(-k.imag*z)
+
+#     def show(self, medium1=Medium(ε_r=1, μ_r=1, σ=0), medium2=Medium(ε_r=2, μ_r=1, σ=.81)):
+#         peak=self._A
+#         super().show(
+#             t=np.linspace(-.8e-9, 3e-9, 160),
+#             E1_i=self.function,
+#             ylim=[-peak,1.2*peak]
+#         )
